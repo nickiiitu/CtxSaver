@@ -21,6 +21,8 @@ export interface UserConfig {
     aiModel: string;
     /** AI API key (prefer CTXSAVER_AI_KEY env var) */
     aiApiKey?: string;
+    /** Max tokens for AI responses (higher = more detailed summaries) */
+    aiMaxTokens: number;
 }
 
 const DEFAULT_CONFIG: UserConfig = {
@@ -32,6 +34,7 @@ const DEFAULT_CONFIG: UserConfig = {
     autoHook: false,
     aiProvider: "https://api.openai.com/v1",
     aiModel: "gpt-4o-mini",
+    aiMaxTokens: 16384,
 };
 
 /**

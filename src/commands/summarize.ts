@@ -12,6 +12,7 @@ import {
 import { callAI } from "../core/ai";
 import { extractFullTranscript } from "../core/parser";
 import { ContextEntry } from "../core/types";
+import { loadConfig } from "../utils/config";
 import simpleGit from "simple-git";
 
 const git = simpleGit();
@@ -24,6 +25,7 @@ export async function summarizeCommand(options?: { verbose?: boolean }) {
     }
 
     try {
+        const config = await loadConfig();
         console.log(chalk.gray("  Analyzing git changes..."));
 
         const cwd = process.cwd();
@@ -122,7 +124,10 @@ Generate ONLY a valid JSON response (no markdown, no explanation) with this exac
         const result = await callAI([
             { role: "system", content: "You are a precise developer session summarizer. You output ONLY valid JSON — no markdown fences, no explanation text, no preamble. Your summaries are used as handoff context for AI coding sessions, so accuracy about what was completed vs interrupted is critical." },
             { role: "user", content: prompt },
-        ]);
+        ], {
+            maxTokens: config.aiMaxTokens,  // Use config value to allow complete detailed summaries
+            temperature: 0.3,
+        });
 
         if (result.error) {
             console.log(chalk.red(`✗ ${result.error}`));
@@ -140,12 +145,39 @@ Generate ONLY a valid JSON response (no markdown, no explanation) with this exac
         // Parse AI response
         let parsed: any;
         try {
-            // Extract JSON from potential markdown code blocks
-            const jsonMatch = result.content.match(/```(?:json)?\s*([\s\S]*?)```/) ||
-                [null, result.content];
-            parsed = JSON.parse(jsonMatch[1]!.trim());
-        } catch {
-            console.log(chalk.yellow("⚠ Could not parse AI response. Saving raw summary."));
+            let content = result.content.trim();
+            
+            // Try to extract JSON from markdown code blocks
+            const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (jsonMatch) {
+                content = jsonMatch[1].trim();
+            }
+            
+            // Parse the JSON
+            parsed = JSON.parse(content);
+            
+            // Handle nested JSON strings (some LLMs return stringified JSON in fields)
+            if (typeof parsed.task === 'string' && parsed.task.startsWith('{')) {
+                try {
+                    const nestedParsed = JSON.parse(parsed.task);
+                    parsed = nestedParsed;
+                } catch {
+                    // If nested parsing fails, keep original
+                }
+            }
+            
+            // Validate required fields exist
+            if (!parsed.task || !parsed.currentState) {
+                throw new Error("Missing required fields in AI response");
+            }
+        } catch (err) {
+            console.log(chalk.yellow(`⚠ Could not parse AI response: ${err instanceof Error ? err.message : 'Invalid JSON'}`));
+            if (verbose) {
+                console.log(chalk.yellow("\n  Problematic response (first 500 chars):"));
+                console.log(chalk.gray(result.content.slice(0, 500)));
+                console.log(chalk.yellow("\n  This usually means the response was truncated. Try increasing maxTokens or using a different model."));
+            }
+            console.log(chalk.gray("  Saving raw summary as fallback..."));
             parsed = {
                 task: result.content.slice(0, 200),
                 approaches: [],

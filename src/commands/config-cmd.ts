@@ -12,6 +12,7 @@ const VALID_KEYS: (keyof UserConfig)[] = [
     "aiProvider",
     "aiModel",
     "aiApiKey",
+    "aiMaxTokens",
 ];
 
 export async function configCommand(action?: string, key?: string, value?: string) {
@@ -66,7 +67,7 @@ export async function configCommand(action?: string, key?: string, value?: strin
             let typedValue: any = value;
             if (value === "true") typedValue = true;
             else if (value === "false") typedValue = false;
-            else if (!isNaN(Number(value)) && key !== "aiApiKey" && key !== "aiProvider" && key !== "aiModel") {
+            else if (!isNaN(Number(value)) && !["aiApiKey", "aiProvider", "aiModel", "defaultOutput"].includes(key)) {
                 typedValue = Number(value);
             }
 
