@@ -1,6 +1,6 @@
 {
   "name": "ctxsaver",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Persistent AI coding context for teams. Git tracks code history. CtxSaver tracks intent history.",
   "keywords": [
     "ai",
