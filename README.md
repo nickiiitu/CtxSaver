@@ -28,14 +28,9 @@ ctxsaver resume
 - Node.js 16+ and npm
 
 ### Setup
-> **Note:** Not yet published to npm. Install locally from source:
 
 ```bash
-git clone git@github.com:nickiiitu/CtxSaver.git
-cd CtxSaver
-npm install
-npm run build
-npm link        # makes `ctxsaver` available globally on your machine
+npm install -g ctxsaver
 
 # Verify installation
 ctxsaver --version
@@ -55,8 +50,8 @@ ctxsaver init
 ctxsaver init
 
 # 2. Work on your code... then save context
-ctxsaver save
-# → Interactive prompts capture: Task, Approaches, Decisions, Next Steps
+ctxsaver summarize
+# → Interactive prompts capture: Task, Approaches, Decisions, Next Steps with the help of LLM
 
 # 3. Resume in ANY editor
 ctxsaver resume
@@ -65,8 +60,13 @@ ctxsaver resume
 ```
 
 ## Features & Commands
+### Core AI-Powered
+**Requires an LLM Provider.** Set via `CTXSAVER_AI_KEY` env var or `ctxsaver config set aiApiKey <key>`. Defaults to OpenAI-compatible API.
+| Command | Description |
+|---------|-------------|
+| `ctxsaver summarize` | AI-generates context from git diff + recent commits |
 
-### Core (No AI Key Required)
+### No AI Key Required
 **These commands work locally with zero dependencies.**
 | Command | Description |
 |---------|-------------|
@@ -85,13 +85,7 @@ ctxsaver resume
 | `ctxsaver watch` | Auto-save context on file changes (using `chokidar`) |
 | `ctxsaver hook install` | Install git post-commit hook for auto-capture |
 
-### AI-Powered (Experimental)
-**Requires an LLM Provider.** Set via `CTXSAVER_AI_KEY` env var or `ctxsaver config set aiApiKey <key>`. Defaults to OpenAI-compatible API.
-| Command | Description |
-|---------|-------------|
-| `ctxsaver summarize` | AI-generates context from git diff + recent commits |
-| `ctxsaver suggest` | AI suggests next steps based on current context |
-| `ctxsaver compress` | detailed history into a concise summary |
+
 
 #### AI Commands Setup
 To use `ctxsaver summarize`, `suggest`, or `compress`, configure your AI provider:

@@ -1,6 +1,6 @@
 {
   "name": "ctxsaver",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "Persistent AI coding context for teams. Git tracks code history. CtxSaver tracks intent history.",
   "keywords": [
     "ai",
@@ -12,8 +12,12 @@
     "developer-tools",
     "cli"
   ],
+  "files": [
+    "dist/",
+    "README.md"
+  ],
   "license": "MIT",
-  "author": "Sukhad",
+  "author": "Nikhil",
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "./dist/index.d.ts",
