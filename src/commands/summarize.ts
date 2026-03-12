@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import inquirer from "inquirer";
 import { v4 as uuid } from "uuid";
 import { isInitialized, saveContext } from "../core/context";
 import {
@@ -10,7 +11,7 @@ import {
     getAuthor,
 } from "../core/git";
 import { callAI } from "../core/ai";
-import { extractFullTranscript } from "../core/parser";
+import { extractFullTranscript, listClaudeSessions, ClaudeSessionInfo } from "../core/parser";
 import { ContextEntry } from "../core/types";
 import { loadConfig } from "../utils/config";
 import simpleGit from "simple-git";
@@ -49,11 +50,64 @@ export async function summarizeCommand(options?: { verbose?: boolean }) {
             diffSummary = "No diff available";
         }
 
-        // Try to extract full Claude session transcript
-        console.log(chalk.gray("  Looking for Claude session transcript..."));
-        const transcript = await extractFullTranscript(cwd);
+        // List available Claude sessions and let user pick
+        console.log(chalk.gray("  Scanning for Claude Code sessions..."));
+        const sessions = await listClaudeSessions(cwd);
+
+        let transcript: string | null = null;
+        let selectedSession: ClaudeSessionInfo | null = null;
+
+        if (sessions.length === 0) {
+            console.log(chalk.gray("  No Claude sessions found — summarizing from git only"));
+        } else if (sessions.length === 1) {
+            selectedSession = sessions[0];
+            console.log(chalk.gray(`  Found 1 session: "${selectedSession.title}"`));
+            transcript = await extractFullTranscript(cwd, selectedSession.filePath);
+        } else {
+            console.log(chalk.gray(`  Found ${sessions.length} sessions\n`));
+
+            const formatTime = (iso: string) => {
+                try { return new Date(iso).toLocaleString(); } catch { return iso; }
+            };
+
+            const choices = sessions.map((s, i) => ({
+                name: [
+                    i === 0 ? chalk.green("● ") : chalk.gray("  "),
+                    chalk.bold(s.title.length > 60 ? s.title.slice(0, 57) + "..." : s.title),
+                    chalk.gray(` | ${formatTime(s.startedAt)}`),
+                    chalk.gray(` | ${s.messageCount} msgs`),
+                    chalk.gray(` | ${s.sessionId.slice(0, 8)}…`),
+                ].join(""),
+                value: s.sessionId,
+                short: s.title.slice(0, 40),
+            }));
+
+            choices.push({
+                name: chalk.gray("  Skip — use git activity only"),
+                value: "__none__",
+                short: "Git only",
+            });
+
+            const answer = await inquirer.prompt([
+                {
+                    type: "list",
+                    name: "sessionId",
+                    message: "Which Claude session do you want to summarize?",
+                    choices,
+                    default: sessions[0].sessionId,
+                },
+            ]);
+
+            if (answer.sessionId !== "__none__") {
+                selectedSession = sessions.find((s) => s.sessionId === answer.sessionId) ?? null;
+                if (selectedSession) {
+                    transcript = await extractFullTranscript(cwd, selectedSession.filePath);
+                }
+            }
+        }
+
         if (transcript) {
-            console.log(chalk.gray(`  Found session transcript (${Math.round(transcript.length / 1000)}k chars) — including in summary`));
+            console.log(chalk.gray(`  Using session transcript (${Math.round(transcript.length / 1000)}k chars)`));
             if (verbose) {
                 console.log(chalk.bold.cyan("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"));
                 console.log(chalk.bold.cyan("  EXTRACTED JSONL TRANSCRIPT"));
@@ -61,8 +115,8 @@ export async function summarizeCommand(options?: { verbose?: boolean }) {
                 console.log(transcript);
                 console.log(chalk.bold.cyan("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"));
             }
-        } else {
-            console.log(chalk.gray("  No Claude session found — summarizing from git only"));
+        } else if (sessions.length > 0) {
+            console.log(chalk.gray("  Skipped session — summarizing from git only"));
         }
 
         const transcriptSection = transcript

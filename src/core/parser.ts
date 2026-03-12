@@ -3,6 +3,15 @@ import path from "path";
 import os from "os";
 import readline from "readline";
 
+export interface ClaudeSessionInfo {
+    sessionId: string;
+    filePath: string;
+    startedAt: string;
+    lastActiveAt: string;
+    title: string;
+    messageCount: number;
+}
+
 export interface ExtractedContext {
     task: string;
     approaches: string[];
@@ -618,12 +627,10 @@ function extractCompletedItems(content: string): string[] {
 }
 
 // -------------------------------------------------------------------
-// Full transcript extraction — for use with LLM-based summarization
-// Reads ALL user+assistant messages from the latest Claude session file,
-// skipping tool calls / metadata lines, and caps at MAX_CHARS to stay
-// within affordable LLM token budgets.
+// Claude project path resolution (shared helper)
 // -------------------------------------------------------------------
-export async function extractFullTranscript(repoPath: string): Promise<string | null> {
+
+function resolveClaudeProjectPath(repoPath: string): string | null {
     const home = os.homedir();
     const claudeDir = path.join(home, ".claude", "projects");
 
@@ -638,18 +645,104 @@ export async function extractFullTranscript(repoPath: string): Promise<string | 
 
     if (!matchingDir) return null;
 
-    const projectPath = path.join(claudeDir, matchingDir);
+    return path.join(claudeDir, matchingDir);
+}
+
+// -------------------------------------------------------------------
+// List all Claude Code sessions for a repo — used by session picker
+// -------------------------------------------------------------------
+
+export async function listClaudeSessions(repoPath: string): Promise<ClaudeSessionInfo[]> {
+    const projectPath = resolveClaudeProjectPath(repoPath);
+    if (!projectPath) return [];
+
     const jsonlFiles = fs
         .readdirSync(projectPath)
-        .filter((f) => f.endsWith(".jsonl"))
-        .map((f) => ({ name: f, mtime: fs.statSync(path.join(projectPath, f)).mtime.getTime() }))
-        .sort((a, b) => b.mtime - a.mtime);
+        .filter((f) => f.endsWith(".jsonl"));
 
-    if (jsonlFiles.length === 0) return null;
+    if (jsonlFiles.length === 0) return [];
 
-    const sessionPath = path.join(projectPath, jsonlFiles[0].name);
+    const sessions: ClaudeSessionInfo[] = [];
 
-    // Read every line (not just the last 500)
+    for (const file of jsonlFiles) {
+        const filePath = path.join(projectPath, file);
+        const sessionId = file.replace(".jsonl", "");
+
+        let startedAt = "";
+        let lastActiveAt = "";
+        let title = "";
+        let messageCount = 0;
+
+        const fileStream = fs.createReadStream(filePath, { encoding: "utf-8" });
+        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+        for await (const line of rl) {
+            try {
+                const entry = JSON.parse(line);
+                const ts = entry.timestamp;
+
+                if (ts && !startedAt) startedAt = ts;
+                if (ts) lastActiveAt = ts;
+
+                if (entry.type === "user") {
+                    messageCount++;
+                    if (!title) {
+                        const text = extractMessageText(entry);
+                        if (text && text.length > 5) {
+                            title = text.split("\n")[0].trim().slice(0, 100);
+                        }
+                    }
+                } else if (entry.type === "assistant") {
+                    messageCount++;
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        if (messageCount > 0) {
+            sessions.push({
+                sessionId,
+                filePath,
+                startedAt,
+                lastActiveAt,
+                title: title || "(no user message)",
+                messageCount,
+            });
+        }
+    }
+
+    return sessions.sort(
+        (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
+    );
+}
+
+// -------------------------------------------------------------------
+// Full transcript extraction — for use with LLM-based summarization
+// Reads ALL user+assistant messages from a Claude session file,
+// skipping tool calls / metadata lines, and caps at MAX_CHARS to stay
+// within affordable LLM token budgets.
+// If sessionPath is provided, uses that file directly. Otherwise picks
+// the most recent session for the repo.
+// -------------------------------------------------------------------
+export async function extractFullTranscript(repoPath: string, sessionPath?: string): Promise<string | null> {
+    if (!sessionPath) {
+        const projectPath = resolveClaudeProjectPath(repoPath);
+        if (!projectPath) return null;
+
+        const jsonlFiles = fs
+            .readdirSync(projectPath)
+            .filter((f) => f.endsWith(".jsonl"))
+            .map((f) => ({ name: f, mtime: fs.statSync(path.join(projectPath, f)).mtime.getTime() }))
+            .sort((a, b) => b.mtime - a.mtime);
+
+        if (jsonlFiles.length === 0) return null;
+
+        sessionPath = path.join(projectPath, jsonlFiles[0].name);
+    }
+
+    if (!fs.existsSync(sessionPath)) return null;
+
     const allLines = await readAllLines(sessionPath);
 
     const MAX_CHARS = 60000; // ~15k tokens — affordable for gpt-4o-mini (~$0.002)
